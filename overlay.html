@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Quiz Overlay</title>
+	<style>
+		@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800&display=swap');
+		:root {
+			--bg: #0b0f14;
+			--panel: #141b24;
+			--text: #f2f6ff;
+			--muted: #a9b4c4;
+			--accent: #5dd6ff;
+			--danger: #ff6b6b;
+			--success: #4ad66d;
+		}
+
+		* { box-sizing: border-box; }
+		html, body {
+			height: 100%;
+		}
+		body {
+			margin: 0;
+			font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+			background: var(--bg);
+			color: var(--text);
+			overflow: hidden;
+		}
+
+		body.obs-overlay {
+			background: transparent;
+		}
+
+		.hidden { display: none !important; }
+
+		.app {
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+		}
+
+		header {
+			padding: 16px 24px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			border-bottom: 1px solid #1f2a36;
+			background: #0e141b;
+		}
+		header h1 {
+			font-size: 18px;
+			margin: 0;
+		}
+		header .role {
+			font-size: 13px;
+			color: var(--muted);
+		}
+
+		.no-header header {
+			display: none;
+		}
+
+		main {
+			flex: 1;
+			display: flex;
+			gap: 16px;
+			padding: 16px;
+			overflow: hidden;
+		}
+
+		.panel {
+			background: var(--panel);
+			border: 1px solid #1f2a36;
+			border-radius: 10px;
+			padding: 16px;
+		}
+
+		.judge-layout {
+			display: grid;
+			grid-template-rows: auto auto 1fr;
+			gap: 14px;
+			width: 100%;
+			min-height: 0;
+		}
+
+		.judge-controls {
+			display: grid;
+			gap: 8px;
+			padding: 8px 12px;
+		}
+
+		.controls-row {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+
+		.controls-left,
+		.controls-center,
+		.controls-right {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			flex: 1;
+		}
+
+		.controls-center {
+			justify-content: center;
+		}
+		.controls-center.stack-center {
+			flex-direction: column;
+			align-items: center;
+			gap: 6px;
+		}
+		.score-row {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+		.score-display {
+			display: grid;
+			gap: 2px;
+			padding: 6px 12px;
+			border: 2px solid #263241;
+			border-radius: 10px;
+			background: #0f1620;
+			min-width: 140px;
+			text-align: center;
+		}
+		.score-display .score-teams {
+			font-size: 11px;
+			color: var(--muted);
+			line-height: 1;
+		}
+		.score-display .score-values {
+			font-size: 30px;
+			font-weight: 800;
+			line-height: 1.1;
+		}
+
+		.controls-right {
+			justify-content: flex-end;
+		}
+
+		.controls-label {
+			font-size: 12px;
+			color: var(--muted);
+			white-space: nowrap;
+		}
+
+		.score-pill {
+			min-width: 40px;
+			text-align: center;
+			padding: 8px 10px;
+			border: 1px solid #263241;
+			border-radius: 8px;
+			background: #0f1620;
+			color: var(--text);
+			font-weight: 600;
+		}
+		.score-btn {
+			font-size: 20px;
+			padding: 12px 18px;
+			min-width: 54px;
+			border-width: 2px;
+		}
+		.score-pill.large {
+			font-size: 36px;
+			padding: 14px 20px;
+			min-width: 80px;
+		}
+
+		.stack { display: grid; gap: 12px; }
+		label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+		input, select, textarea, button {
+			font-size: 14px;
+			padding: 10px;
+			border-radius: 8px;
+			border: 1px solid #263241;
+			background: #0f1620;
+			color: var(--text);
+		}
+		.question-input {
+			width: 160px;
+			min-width: 120px;
+		}
+		textarea { min-height: 110px; resize: vertical; }
+		button { cursor: pointer; }
+		button.primary { background: var(--accent); color: #0b0f14; border: none; }
+		button.danger { background: transparent; border: 2px solid var(--danger); color: var(--danger); }
+		button.danger.active { background: var(--danger); color: #0b0f14; border: 2px solid var(--danger); }
+		button.success { background: var(--success); border: none; color: #0b0f14; }
+		button.outline { background: transparent; }
+		.toggle-indicator {
+			border-width: 2px;
+			font-weight: 600;
+			padding: 10px 14px;
+		}
+		.toggle-indicator.on {
+			border-color: var(--success);
+			color: var(--success);
+		}
+		.toggle-indicator.off {
+			border-color: var(--danger);
+			color: var(--danger);
+		}
+		.toggle-indicator.on.filled {
+			background: var(--success);
+			color: #0b0f14;
+		}
+		.toggle-indicator.off.filled {
+			background: var(--danger);
+			color: #0b0f14;
+		}
+
+		.row { display: flex; gap: 8px; align-items: center; }
+		.row.wrap { flex-wrap: wrap; }
+		.row.space { justify-content: space-between; }
+
+		.questions-display {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 24px;
+			min-height: 0;
+			flex: 1;
+		}
+		.questions-display .block {
+			background: #0f1620;
+			border-radius: 12px;
+			padding: 24px;
+			border: 1px solid #1f2a36;
+			min-height: 0;
+			display: grid;
+			grid-template-rows: auto 1fr 1fr;
+			gap: 12px;
+			overflow: hidden;
+		}
+		.q-title { font-size: clamp(12px, 1.3vw, 18px); font-weight: 700; margin-bottom: 4px; color: var(--muted); }
+		.q-body { font-size: clamp(18px, 2.8vw, 36px); line-height: 1.2; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; }
+		.q-body .q-prefix { display: block; font-weight: 400; margin-bottom: 12px; }
+		.q-body .q-main { display: block; font-weight: 700; margin-top: 8px; }
+		.a-body { font-size: clamp(14px, 2.5vw, 24px); color: var(--muted); margin-top: 8px; white-space: pre-wrap; line-height: 1.3; word-wrap: break-word; overflow-wrap: break-word; }
+		.answer-box {
+			background: #0d131b;
+			border: 1px solid #1f2a36;
+			border-radius: 10px;
+			padding: 12px 16px;
+			min-height: 80px;
+			display: flex;
+		}
+		.answer-box .a-body {
+			flex: 1;
+		}
+		.q-body,
+		.answer-box {
+			overflow: hidden;
+		}
+		.questions-display .block {
+			min-height: 0;
+			flex: 1;
+		}
+		.questions-display .block > .q-body {
+			min-height: 0;
+		}
+		.questions-display .block > .answer-box {
+			min-height: 0;
+		}
+
+		.team-scoreboard {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 16px;
+			margin-top: 16px;
+		}
+		.team-card {
+			background: #0f1620;
+			border: 1px solid #1f2a36;
+			border-radius: 12px;
+			padding: 16px;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 10px;
+		}
+		.team-name {
+			font-size: clamp(20px, 3vw, 34px);
+			font-weight: 700;
+			text-align: center;
+		}
+		.team-score {
+			font-size: clamp(32px, 5vw, 64px);
+			font-weight: 800;
+			color: var(--accent);
+			text-align: center;
+		}
+		.team-score.hidden-score { color: #364556; }
+
+		.overlay-view {
+			width: 100%;
+			min-height: 100vh;
+			padding: 0 32px 32px;
+			display: grid;
+			align-content: end;
+			gap: 18px;
+			background: transparent;
+		}
+
+		.event-title {
+			text-align: center;
+			font-size: clamp(18px, 2.5vw, 28px);
+			color: var(--muted);
+			letter-spacing: 1px;
+			text-transform: uppercase;
+		}
+
+		.overlay-questions {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 24px;
+			min-height: 50vh;
+		}
+
+		.overlay-questions .block {
+			background: rgba(15, 22, 32, 0.92);
+			border-radius: 14px;
+			border: 1px solid #233244;
+			padding: 24px;
+			min-height: 40vh;
+			display: flex;
+			flex-direction: column;
+			justify-content: flex-start;
+			gap: 10px;
+		}
+
+		.overlay-bar {
+			display: grid;
+			grid-template-columns: 1fr 2.2fr 1fr;
+			gap: 16px;
+			align-items: center;
+			padding: 14px 18px;
+			min-height: 150px;
+			max-height: 33vh;
+			background: linear-gradient(180deg, rgba(32, 38, 46, 0.88), rgba(14, 18, 24, 0.88));
+			border: 1px solid #2c3a48;
+			border-radius: 16px;
+			box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(90, 122, 150, 0.2);
+			margin: 0 auto 28px;
+			width: min(1200px, 92vw);
+		}
+
+		.overlay-team {
+			display: grid;
+			gap: 4px;
+			text-align: center;
+			padding: 6px 0;
+		}
+		.overlay-team .name {
+			font-family: 'Orbitron', system-ui, sans-serif;
+			font-size: clamp(18px, 2.8vw, 34px);
+			color: #c0c9d8;
+			text-transform: uppercase;
+			letter-spacing: 1.5px;
+			text-shadow: 0 0 10px rgba(88, 225, 255, 0.25);
+		}
+		.overlay-team .score {
+			font-family: 'Orbitron', system-ui, sans-serif;
+			font-size: clamp(34px, 5vw, 80px);
+			font-weight: 800;
+			color: #58e1ff;
+			text-shadow: 0 0 12px rgba(88, 225, 255, 0.45);
+		}
+
+		.overlay-center {
+			text-align: center;
+			padding: 8px 12px;
+			border-radius: 12px;
+			border: 1px solid rgba(88, 225, 255, 0.5);
+			box-shadow: inset 0 0 12px rgba(88, 225, 255, 0.12);
+			background: rgba(8, 12, 18, 0.7);
+			min-height: 110px;
+			max-height: calc(33vh - 40px);
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			gap: 6px;
+		}
+		.overlay-center .overlay-qnum {
+			order: -2;
+		}
+		.overlay-center .q-label {
+			order: -1;
+		}
+		.overlay-center .q-text {
+			order: 0;
+		}
+		.overlay-center .q-label {
+			font-family: 'Orbitron', system-ui, sans-serif;
+			font-size: clamp(12px, 1.4vw, 18px);
+			color: #c6d2e3;
+			margin-bottom: 6px;
+			letter-spacing: 0.5px;
+			text-transform: uppercase;
+		}
+
+		.overlay-qnum {
+			text-align: center;
+			font-size: clamp(10px, 1.2vw, 14px);
+			color: rgba(198, 210, 227, 0.6);
+			letter-spacing: 0.5px;
+			margin-bottom: -6px;
+		}
+		.overlay-center .q-text {
+			font-family: 'Orbitron', system-ui, sans-serif;
+			font-size: clamp(20px, 2.4vw, 33px);
+			font-weight: 600;
+			line-height: 1.2;
+			white-space: normal;
+			color: #f1f6ff;
+			max-height: calc(33vh - 80px);
+			overflow: hidden;
+			display: grid;
+			gap: 12px;
+		}
+
+		.overlay-center .q-text .overlay-lang {
+			display: flex;
+			flex-direction: column;
+			gap: 0;
+		}
+		.overlay-center .q-text .overlay-sub {
+			font-size: 0.7em;
+			font-weight: 500;
+			color: rgba(198, 210, 227, 0.7);
+			display: block;
+		}
+		.overlay-center .q-text .overlay-mini-break {
+			display: block;
+			height: 0.25em;
+		}
+		.overlay-center .q-text .overlay-main {
+			font-size: 1em;
+			font-weight: 600;
+			color: #f1f6ff;
+			display: block;
+		}
+		.overlay-center .q-text .overlay-lang-divider {
+			height: 1px;
+			width: 70%;
+			margin: 12px auto;
+			padding: 4px 0;
+			background: rgba(88, 225, 255, 0.35);
+		}
+
+		.question-text .q-prefix {
+			display: block;
+			font-size: 0.75em;
+			font-weight: 700;
+			padding: 10px 18px;
+			border: 2px solid #263241;
+			border-radius: 10px;
+			background: #0f1620;
+			min-width: 140px;
+			text-align: center;
+		}
+		.scoreboard-only {
+			width: 100%;
+			font-size: 11px;
+			display: grid;
+			gap: 24px;
+		}
+
+		.scoreboard-layout {
+			font-size: 30px;
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 36px;
+			align-items: center;
+			text-align: center;
+			min-height: 70vh;
+		}
+
+		.scoreboard-layout .name {
+			font-family: 'Orbitron', system-ui, sans-serif;
+			font-size: clamp(26px, 4vw, 48px);
+			color: var(--muted);
+			text-transform: uppercase;
+			letter-spacing: 2px;
+		}
+		.scoreboard-layout .score {
+			font-family: 'Orbitron', system-ui, sans-serif;
+			font-size: clamp(90px, 16vw, 200px);
+			font-weight: 800;
+			color: #f1f6ff;
+		}
+
+		.scoreboard-only.fullscreen {
+			min-height: 100vh;
+			align-content: center;
+		}
+
+		.projector-layout {
+			height: 100dvh;
+			min-height: 100vh;
+			display: grid;
+			grid-template-rows: auto 1fr;
+			gap: 0;
+			padding: 2px 16px 4px;
+			box-sizing: border-box;
+		}
+
+		.projector-title {
+			text-align: center;
+			font-size: clamp(22px, 2.6vw, 36px);
+			color: var(--text);
+			letter-spacing: 2px;
+			text-transform: uppercase;
+			padding-top: 0;
+			margin-top: 0;
+			margin-bottom: 0;
+		}
+
+		.projector-header {
+			display: grid;
+			grid-template-columns: 1fr auto 1fr;
+			align-items: center;
+			gap: 8px;
+			padding: 0 2px;
+		}
+		.projector-header .left-label { text-align: left; }
+		.projector-header .right-label { text-align: right; }
+
+		.projector-questions {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 20px;
+			min-height: 0;
+			height: 100%;
+			align-items: stretch;
+		}
+
+		.projector-questions .q-title {
+			text-align: left;
+			padding: 0 2px;
+		}
+		#projectorRightLabel {
+			text-align: right;
+		}
+
+		.projector-questions .block {
+			min-height: 0;
+			height: 100%;
+			background: rgba(15, 22, 32, 0.35);
+			border: 1px solid rgba(88, 225, 255, 0.35);
+			box-shadow: inset 0 0 16px rgba(88, 225, 255, 0.12);
+			overflow: hidden;
+			padding: 16px;
+		}
+
+		.projector-questions .q-body {
+			height: 100%;
+			overflow: hidden;
+			font-size: clamp(26px, 4.2vw, 64px);
+			opacity: 1;
+		}
+
+		body.projector-screen {
+			overflow: hidden;
+		}
+
+		body.projector-screen main {
+			padding: 0;
+			gap: 0;
+		}
+
+		body.projector-screen .overlay-view {
+			padding: 0;
+			gap: 0;
+		}
+
+		body.projector-screen #projectorView {
+			height: 100dvh;
+		}
+
+		.status {
+			font-size: 12px;
+			color: var(--muted);
+		}
+
+		.top-status {
+			font-size: 11px;
+			color: var(--muted);
+			padding: 4px 0;
+		}
+
+		.pill {
+			padding: 4px 10px;
+			border-radius: 999px;
+			font-size: 12px;
+			background: #1e2a36;
+			color: var(--muted);
+		}
+
+		.modal-overlay {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background: rgba(0, 0, 0, 0.75);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			z-index: 1000;
+		}
+
+		.modal-content {
+			background: var(--panel);
+			border: 1px solid #1f2a36;
+			border-radius: 12px;
+			padding: 24px;
+			max-width: 500px;
+			width: 90%;
+			max-height: 85vh;
+			overflow-y: auto;
+		}
+
+		.modal-header {
+			font-size: 18px;
+			font-weight: 600;
+			margin-bottom: 20px;
+			color: var(--text);
+		}
+
+		.modal-footer {
+			display: flex;
+			gap: 8px;
+			justify-content: flex-end;
+			margin-top: 20px;
+		}
+	</style>
+</head>
+<body>
+	<div class="app">
+		<header>
+			<div class="role" id="headerView">View: Judge</div>
+			<div class="role" id="syncStatus">Local only</div>
+		</header>
+
+		<main>
+			<div id="setupModal" class="modal-overlay hidden">
+				<div class="modal-content">
+					<div class="modal-header">Setup</div>
+					<div class="stack">
+						<label>
+							Room ID
+							<input id="roomIdInput" placeholder="room-1" />
+						</label>
+
+						<label>
+							Event Title (Projector)
+							<input id="eventTitleInput" placeholder="International Quiz 2026" />
+						</label>
+
+						<label>
+							CSV Questions
+							<input type="file" id="csvInput" accept=".csv" />
+						</label>
+
+						<div class="stack">
+							<label>
+								Left Language
+								<select id="leftLang"></select>
+							</label>
+							<label>
+								Right Language
+								<select id="rightLang"></select>
+							</label>
+						</div>
+
+						<label>
+							Team 1 Name
+							<input id="team1Name" />
+						</label>
+
+						<label>
+							Team 2 Name
+							<input id="team2Name" />
+						</label>
+
+						<label>
+							Toggle Scores (Audience Views)
+							<button class="outline" id="toggleScores">Scores: On</button>
+						</label>
+
+						<label>
+							<button class="outline" id="swapScoreboard">Swap Scoreboard Sides</button>
+						</label>
+					</div>
+					<div class="modal-footer">
+						<button class="outline" id="cancelSetup">Cancel</button>
+						<button class="primary" id="saveSetup">Save</button>
+					</div>
+				</div>
+			</div>
+
+			<section id="judgeView" class="judge-layout hidden">
+				<div class="panel judge-controls">
+					<div class="controls-row">
+						<div class="controls-left"></div>
+						<div class="controls-center"></div>
+						<div class="controls-right"></div>
+					</div>
+
+					<div class="controls-row">
+						<div class="controls-left">
+							<button class="outline" id="prevQuestion">Previous</button>
+							<button class="primary" id="nextQuestion">Next</button>
+							<span class="controls-label">Select</span>
+							<input id="questionInput" class="question-input" list="questionList" inputmode="numeric" placeholder="Type or choose" />
+							<datalist id="questionList"></datalist>
+							<span class="status" id="questionIndex">0 / 0</span>
+						</div>
+						<div class="controls-center stack-center">
+							<div class="status" id="currentQuestionNumber"></div>
+							<div class="score-row">
+								<button class="outline score-btn" data-score="-1" data-team="0">-</button>
+								<button class="outline score-btn" data-score="1" data-team="0">+</button>
+								<div class="score-display" id="scoreDisplay">0 : 0</div>
+								<button class="outline score-btn" data-score="1" data-team="1">+</button>
+								<button class="outline score-btn" data-score="-1" data-team="1">-</button>
+							</div>
+						</div>
+						<div class="controls-right" style="flex-direction: column; align-items: flex-end; gap: 6px;">
+							<div style="display: flex; align-items: center; gap: 8px;">
+								<span class="controls-label">Viewer Questions:</span>
+								<button class="outline toggle-indicator filled" id="toggleBlank">Visible</button>
+							</div>
+							<div style="display: flex; align-items: center; gap: 8px;">
+								<span class="controls-label">Answers Visibility:</span>
+								<button class="outline toggle-indicator filled" id="toggleAnswers">On</button>
+								<button class="outline" id="openSetup">Setup</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="panel stack">
+					<div class="questions-display">
+						<div class="block">
+							<div class="q-title" style="display: flex; justify-content: space-between; align-items: center;">
+								<span id="leftLangLabel">Left</span>
+							</div>
+							<div class="q-body" id="leftQuestion"></div>
+							<div class="answer-box">
+								<div class="a-body" id="leftAnswer"></div>
+							</div>
+						</div>
+						<div class="block">
+							<div class="q-title" style="display: flex; justify-content: space-between; align-items: center;">
+								<span id="rightLangLabel">Right</span>
+							</div>
+							<div class="q-body" id="rightQuestion"></div>
+							<div class="answer-box">
+								<div class="a-body" id="rightAnswer"></div>
+							</div>
+						</div>
+					</div>
+
+				</div>
+			</section>
+
+			<section id="projectorView" class="overlay-view hidden">
+				<div class="projector-layout">
+					<div class="projector-header">
+						<div class="q-title left-label" id="projectorLeftLabel"></div>
+						<div class="projector-title" id="projectorEventTitle">International Quiz 2026</div>
+						<div class="q-title right-label" id="projectorRightLabel"></div>
+					</div>
+					<div class="projector-questions">
+						<div class="block">
+							<div class="q-body question-text" id="projectorLeftQuestion"></div>
+						</div>
+						<div class="block">
+							<div class="q-body question-text" id="projectorRightQuestion"></div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section id="overlayView" class="overlay-view hidden">
+				<div class="overlay-bar">
+					<div class="overlay-team">
+						<div class="name" id="overlayTeam1Name"></div>
+						<div class="score" id="overlayTeam1Score"></div>
+					</div>
+					<div class="overlay-center">
+						<div class="overlay-qnum" id="overlayQuestionNumber"></div>
+						<div class="q-label" id="overlayCenterLabel">Question</div>
+						<div class="q-text question-text" id="overlayCenterText"></div>
+					</div>
+					<div class="overlay-team">
+						<div class="name" id="overlayTeam2Name"></div>
+						<div class="score" id="overlayTeam2Score"></div>
+					</div>
+				</div>
+			</section>
+
+			<section id="scoreboardView" class="scoreboard-only hidden">
+				<div class="row space">
+					<div class="pill">Scoreboard</div>
+					<div class="status" id="scoreboardQuestion"></div>
+				</div>
+				<div class="scoreboard-layout" id="scoreboardLayout">
+					<div>
+						<div class="name" id="scoreboardTeam1Name"></div>
+						<div class="score" id="scoreboardTeam1Score"></div>
+					</div>
+					<div>
+						<div class="name" id="scoreboardTeam2Name"></div>
+						<div class="score" id="scoreboardTeam2Score"></div>
+					</div>
+				</div>
+			</section>
+		</main>
+	</div>
+
+	<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+	<script>
+		const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAGBexZeby5foWzowwqOUcHE4if0_xdX9o",
+    authDomain: "international-quiz-a788b.firebaseapp.com",
+    projectId: "international-quiz-a788b",
+    storageBucket: "international-quiz-a788b.firebasestorage.app",
+    messagingSenderId: "802691345370",
+    appId: "1:802691345370:web:fb03e681e5d85f8a6a6ee3",
+    measurementId: "G-3GN7NGHXZV"
+  };
+
+
+		const view = new URLSearchParams(window.location.search).get('view') || 'judge';
+		const headerView = document.getElementById('headerView');
+		if (headerView) {
+			headerView.textContent = `View: ${view.charAt(0).toUpperCase()}${view.slice(1)}`;
+		}
+
+		const views = {
+			judge: document.getElementById('judgeView'),
+			projector: document.getElementById('projectorView'),
+			overlay: document.getElementById('overlayView'),
+			scoreboard: document.getElementById('scoreboardView')
+		};
+		Object.values(views).forEach(v => v.classList.add('hidden'));
+		if (views[view]) views[view].classList.remove('hidden');
+
+		const state = {
+			roomId: 'room-1',
+			eventTitle: 'International Quiz 2026',
+			questions: [],
+			currentIndex: 0,
+			leftLang: '',
+			rightLang: '',
+			teams: [
+				{ name: 'Team A', score: 0 },
+				{ name: 'Team B', score: 0 }
+			],
+			showScores: true,
+			showAnswersJudge: true,
+			blankQuestions: false,
+			scoreboardSwap: false
+		};
+
+		let firestore = null;
+		let roomDoc = null;
+		let unsubscribe = null;
+		let isSyncing = false;
+
+		const el = (id) => document.getElementById(id);
+		const syncStatus = el('syncStatus');
+
+		const updateSyncStatus = (text) => {
+			if (syncStatus) syncStatus.textContent = text;
+		};
+
+		const setState = (partial, publish = true) => {
+			Object.assign(state, partial);
+			render();
+			if (publish) pushState();
+		};
+
+		const getCurrentQuestion = () => state.questions[state.currentIndex] || null;
+
+		const getLangText = (question, lang, key) => {
+			if (!question || !question.texts || !question.texts[lang]) return '';
+			return (question.texts[lang][key] || '').trim();
+		};
+
+		const normalizeText = (value) => {
+			if (!value) return '';
+			return value.replace(/<br\s*\/?\s*>/gi, '\n').trim();
+		};
+
+		const setTextIfChanged = (element, text) => {
+			if (!element) return;
+			const value = text || '';
+			if (element.dataset.lastText === value) return;
+			element.textContent = value;
+			element.dataset.lastText = value;
+		};
+
+		const setQuestionText = (element, text) => {
+			if (!element) return;
+			const normalized = normalizeText(text);
+			if (element.dataset.lastText === normalized) return;
+			element.dataset.lastText = normalized;
+			element.innerHTML = '';
+			if (!normalized) return;
+			const parts = normalized.split('\n');
+			const prefix = parts.shift();
+			const prefixSpan = document.createElement('span');
+			prefixSpan.className = 'q-prefix';
+			prefixSpan.textContent = prefix;
+			element.appendChild(prefixSpan);
+			if (parts.length) {
+				const mainSpan = document.createElement('span');
+				mainSpan.className = 'q-main';
+				const mainText = parts.join('\n').trim();
+				mainSpan.textContent = mainText;
+				element.appendChild(mainSpan);
+			}
+		};
+
+		const limitWords = (text, limit = 6) => {
+			const words = String(text || '').split(/\s+/).filter(Boolean);
+			if (words.length > limit) return `${words.slice(0, limit).join(' ')}...`;
+			return text;
+		};
+
+		const splitOnDoubleBreak = (text) => {
+			const normalized = normalizeText(text);
+			if (!normalized) return { prefix: '', main: '', hasBreak: false };
+			const chunks = normalized.split(/\n\s*\n/);
+			if (chunks.length > 1) {
+				const prefix = chunks.shift().trim();
+				const main = chunks.join('\n').trim();
+				return { prefix, main, hasBreak: true };
+			}
+			return { prefix: '', main: normalized.trim(), hasBreak: false };
+		};
+
+		const setOverlayQuestionText = (element, leftText, rightText) => {
+			if (!element) return;
+			const key = `${leftText || ''}||${rightText || ''}`;
+			if (element.dataset.lastText === key) return;
+			element.dataset.lastText = key;
+			element.innerHTML = '';
+			const buildBlock = (text) => {
+				const { prefix, main, hasBreak } = splitOnDoubleBreak(text);
+				if (!prefix && !main) return null;
+				const block = document.createElement('div');
+				block.className = 'overlay-lang';
+				if (hasBreak && prefix) {
+					const prefixSpan = document.createElement('span');
+					prefixSpan.className = 'overlay-sub';
+					prefixSpan.textContent = prefix;
+					block.appendChild(prefixSpan);
+					const spacer = document.createElement('span');
+					spacer.className = 'overlay-mini-break';
+					block.appendChild(spacer);
+					const mainSpan = document.createElement('span');
+					mainSpan.className = 'overlay-main';
+					mainSpan.textContent = limitWords(main, 6);
+					block.appendChild(mainSpan);
+				} else {
+					const mainSpan = document.createElement('span');
+					mainSpan.className = 'overlay-main';
+					mainSpan.textContent = main;
+					block.appendChild(mainSpan);
+				}
+				return block;
+			};
+
+			const leftBlock = buildBlock(leftText);
+			const rightBlock = buildBlock(rightText);
+			if (leftBlock) element.appendChild(leftBlock);
+			if (leftBlock && rightBlock) {
+				const divider = document.createElement('div');
+				divider.className = 'overlay-lang-divider';
+				element.appendChild(divider);
+			}
+			if (rightBlock) element.appendChild(rightBlock);
+		};
+
+		const fitTextToBox = (element, minSize, maxSize) => {
+			if (!element) return;
+			const wasVisible = element.style.opacity !== '0' && element.style.visibility !== 'hidden';
+			element.style.opacity = '0';
+			element.style.pointerEvents = 'none';
+			let size = maxSize;
+			element.style.fontSize = `${size}px`;
+			let guard = 0;
+			while (size > minSize && element.scrollHeight > element.clientHeight && guard < 40) {
+				size -= 1;
+				element.style.fontSize = `${size}px`;
+				guard += 1;
+			}
+			if (wasVisible) {
+				element.style.opacity = '1';
+				element.style.pointerEvents = 'auto';
+			}
+		};
+
+		const shouldBlankQuestions = (question) => {
+			if (state.blankQuestions) return true;
+			if (!question) return true;
+			// Don't blank just because languages aren't set - as long as there's question content, show it
+			const leftQ = getLangText(question, state.leftLang, 'q');
+			const rightQ = getLangText(question, state.rightLang, 'q');
+			// Only blank if BOTH are empty AND we have a valid language set
+			if (state.leftLang && state.rightLang) {
+				return leftQ.length === 0 && rightQ.length === 0;
+			}
+			// If languages aren't set yet, don't blank
+			return false;
+		};
+
+		const render = () => {
+			const question = getCurrentQuestion();
+			const questionNumber = question ? question.number : '';
+			const blankAudience = shouldBlankQuestions(question);
+			const blankJudge = !question;
+
+			if (el('headerView')) {
+				const label = view.charAt(0).toUpperCase() + view.slice(1);
+				el('headerView').textContent = `View: ${label}`;
+			}
+
+			if (el('questionIndex')) {
+				setTextIfChanged(el('questionIndex'), `${state.currentIndex + 1} / ${state.questions.length}`);
+			}
+			if (el('questionList')) {
+				const list = el('questionList');
+				list.innerHTML = '';
+				state.questions.forEach((q, i) => {
+					const opt = document.createElement('option');
+					opt.value = String(q.number || i + 1);
+					opt.label = `Q${q.number || i + 1}`;
+					list.appendChild(opt);
+				});
+			}
+			if (el('questionInput')) {
+				const displayValue = String(questionNumber || state.currentIndex + 1);
+				if (document.activeElement !== el('questionInput')) {
+					el('questionInput').value = displayValue;
+				}
+			}
+		if (el('currentQuestionNumber')) {
+			setTextIfChanged(el('currentQuestionNumber'), questionNumber ? `Question #${questionNumber}` : '');
+		}
+
+		setTextIfChanged(el('leftLangLabel'), state.leftLang || 'Left');
+		setTextIfChanged(el('rightLangLabel'), state.rightLang || 'Right');
+		if (el('leftQuestion')) setQuestionText(el('leftQuestion'), blankJudge ? '' : getLangText(question, state.leftLang, 'q'));
+		if (el('rightQuestion')) setQuestionText(el('rightQuestion'), blankJudge ? '' : getLangText(question, state.rightLang, 'q'));
+		setTextIfChanged(el('leftAnswer'), state.showAnswersJudge && !blankJudge ? normalizeText(getLangText(question, state.leftLang, 'a')) : '');
+		setTextIfChanged(el('rightAnswer'), state.showAnswersJudge && !blankJudge ? normalizeText(getLangText(question, state.rightLang, 'a')) : '');
+
+		if (el('team1NamePreview')) el('team1NamePreview').textContent = state.teams[0].name;
+		if (el('team2NamePreview')) el('team2NamePreview').textContent = state.teams[1].name;
+		if (el('team1ScorePreview')) el('team1ScorePreview').textContent = state.teams[0].score;
+		if (el('team2ScorePreview')) el('team2ScorePreview').textContent = state.teams[1].score;
+
+		if (el('scoreDisplay')) {
+			const teamLine = `${state.teams[0].name} - ${state.teams[1].name}`;
+			const scoreLine = `${state.teams[0].score} : ${state.teams[1].score}`;
+			el('scoreDisplay').innerHTML = `
+				<div class="score-teams">${teamLine}</div>
+				<div class="score-values">${scoreLine}</div>
+			`;
+		}
+
+		const projectorLeft = el('projectorLeftQuestion');
+			const projectorRight = el('projectorRightQuestion');
+			if (projectorLeft) setQuestionText(projectorLeft, blankAudience ? '' : getLangText(question, state.leftLang, 'q'));
+			if (projectorRight) setQuestionText(projectorRight, blankAudience ? '' : getLangText(question, state.rightLang, 'q'));
+			if (el('projectorLeftLabel')) el('projectorLeftLabel').textContent = state.leftLang || '';
+			if (el('projectorRightLabel')) el('projectorRightLabel').textContent = state.rightLang || '';
+			if (el('projectorEventTitle')) el('projectorEventTitle').textContent = state.eventTitle || 'International Quiz 2026';
+
+			if (el('overlayTeam1Name')) el('overlayTeam1Name').textContent = state.teams[0].name;
+			if (el('overlayTeam2Name')) el('overlayTeam2Name').textContent = state.teams[1].name;
+			if (el('overlayTeam1Score')) {
+				el('overlayTeam1Score').textContent = state.showScores ? state.teams[0].score : '';
+				el('overlayTeam1Score').classList.toggle('hidden-score', !state.showScores);
+			}
+			if (el('overlayTeam2Score')) {
+				el('overlayTeam2Score').textContent = state.showScores ? state.teams[1].score : '';
+				el('overlayTeam2Score').classList.toggle('hidden-score', !state.showScores);
+			}
+			if (el('overlayCenterText')) {
+				const leftQ = getLangText(question, state.leftLang, 'q');
+				const rightQ = getLangText(question, state.rightLang, 'q');
+				setOverlayQuestionText(el('overlayCenterText'), blankAudience ? '' : leftQ, blankAudience ? '' : rightQ);
+			}
+			if (el('overlayQuestionNumber')) {
+				setTextIfChanged(el('overlayQuestionNumber'), questionNumber ? `Question #${questionNumber}` : '');
+			}
+			if (el('overlayCenterLabel')) {
+				setTextIfChanged(el('overlayCenterLabel'), questionNumber ? 'Question' : 'Question');
+			}
+
+			const teamLeft = state.scoreboardSwap ? state.teams[1] : state.teams[0];
+			const teamRight = state.scoreboardSwap ? state.teams[0] : state.teams[1];
+			if (el('scoreboardTeam1Name')) el('scoreboardTeam1Name').textContent = teamLeft.name;
+			if (el('scoreboardTeam2Name')) el('scoreboardTeam2Name').textContent = teamRight.name;
+			if (el('scoreboardTeam1Score')) {
+				el('scoreboardTeam1Score').textContent = state.showScores ? teamLeft.score : '';
+				el('scoreboardTeam1Score').classList.toggle('hidden-score', !state.showScores);
+			}
+			if (el('scoreboardTeam2Score')) {
+				el('scoreboardTeam2Score').textContent = state.showScores ? teamRight.score : '';
+				el('scoreboardTeam2Score').classList.toggle('hidden-score', !state.showScores);
+			}
+			if (el('scoreboardQuestion')) {
+				el('scoreboardQuestion').textContent = questionNumber ? `Question #${questionNumber}` : '';
+			}
+
+			if (el('toggleAnswers')) {
+				el('toggleAnswers').textContent = state.showAnswersJudge ? 'On' : 'Off';
+				el('toggleAnswers').classList.toggle('on', state.showAnswersJudge);
+				el('toggleAnswers').classList.toggle('off', !state.showAnswersJudge);
+			}
+			if (el('toggleScores')) el('toggleScores').textContent = `Scores: ${state.showScores ? 'On' : 'Off'}`;
+			if (el('toggleBlank')) {
+				el('toggleBlank').textContent = state.blankQuestions ? 'Off' : 'Visible';
+				el('toggleBlank').classList.toggle('on', !state.blankQuestions);
+				el('toggleBlank').classList.toggle('off', state.blankQuestions);
+			}
+
+
+			if (el('team1Name')) el('team1Name').value = state.teams[0].name;
+			if (el('team2Name')) el('team2Name').value = state.teams[1].name;
+			if (el('eventTitleInput')) el('eventTitleInput').value = state.eventTitle;
+
+			if (el('roomIdInput')) el('roomIdInput').value = state.roomId;
+
+			applyFitText();
+		};
+
+		const applyFitText = () => {
+			const projectorLeft = el('projectorLeftQuestion');
+			const projectorRight = el('projectorRightQuestion');
+			const overlayCenter = el('overlayCenterText');
+			const leftQuestion = el('leftQuestion');
+			const rightQuestion = el('rightQuestion');
+			const leftAnswer = el('leftAnswer');
+			const rightAnswer = el('rightAnswer');
+			const elements = [projectorLeft, projectorRight, overlayCenter, leftQuestion, rightQuestion, leftAnswer, rightAnswer].filter(Boolean);
+			elements.forEach(el => {
+				el.style.opacity = '0';
+				el.style.pointerEvents = 'none';
+			});
+			if (projectorLeft) fitTextToBox(projectorLeft, 18, 48);
+			if (projectorRight) fitTextToBox(projectorRight, 18, 48);
+			if (overlayCenter) fitTextToBox(overlayCenter, 16, 28);
+			if (leftQuestion) fitTextToBox(leftQuestion, 14, 34);
+			if (rightQuestion) fitTextToBox(rightQuestion, 14, 34);
+			if (leftAnswer) fitTextToBox(leftAnswer, 12, 24);
+			if (rightAnswer) fitTextToBox(rightAnswer, 12, 24);
+			elements.forEach(el => {
+				el.style.opacity = '1';
+				el.style.pointerEvents = 'auto';
+			});
+		};
+
+		const parseCSV = (text) => {
+			const rows = [];
+			let row = [];
+			let field = '';
+			let inQuotes = false;
+
+			for (let i = 0; i < text.length; i++) {
+				const char = text[i];
+				const next = text[i + 1];
+				if (char === '"') {
+					if (inQuotes && next === '"') {
+						field += '"';
+						i++;
+					} else {
+						inQuotes = !inQuotes;
+					}
+				} else if (char === ',' && !inQuotes) {
+					row.push(field.trim());
+					field = '';
+				} else if ((char === '\n' || char === '\r') && !inQuotes) {
+					if (char === '\r' && next === '\n') i++;
+					row.push(field.trim());
+					if (row.length > 1 || row[0] !== '') rows.push(row);
+					row = [];
+					field = '';
+				} else {
+					field += char;
+				}
+			}
+			if (field.length || row.length) {
+				row.push(field.trim());
+				rows.push(row);
+			}
+			return rows;
+		};
+
+		const buildQuestionsFromRows = (rows) => {
+			if (!rows.length) return { questions: [], languages: [] };
+			const header = rows[0];
+			const hasHeader = header.some(cell => /question|answer/i.test(cell));
+			const languages = [];
+			const map = [];
+
+			if (hasHeader) {
+				header.forEach((cell, idx) => {
+					const questionMatch = cell.match(/(.+)\s+question/i);
+					const answerMatch = cell.match(/(.+)\s+answer/i);
+					if (questionMatch) {
+						const lang = questionMatch[1].trim();
+						if (!languages.includes(lang)) languages.push(lang);
+						map[idx] = { lang, key: 'q' };
+					} else if (answerMatch) {
+						const lang = answerMatch[1].trim();
+						if (!languages.includes(lang)) languages.push(lang);
+						map[idx] = { lang, key: 'a' };
+					}
+				});
+			} else {
+				const pairs = Math.floor((header.length - 1) / 2);
+				for (let i = 0; i < pairs; i++) languages.push(`Lang ${i + 1}`);
+				for (let i = 0; i < pairs; i++) {
+					map[1 + i * 2] = { lang: languages[i], key: 'q' };
+					map[2 + i * 2] = { lang: languages[i], key: 'a' };
+				}
+			}
+
+			const dataRows = hasHeader ? rows.slice(1) : rows;
+			const questions = dataRows.map(row => {
+				const number = row[0] || '';
+				const texts = {};
+				languages.forEach(lang => (texts[lang] = { q: '', a: '' }));
+				row.forEach((cell, idx) => {
+					const mapping = map[idx];
+					if (!mapping) return;
+					if (!texts[mapping.lang]) texts[mapping.lang] = { q: '', a: '' };
+					texts[mapping.lang][mapping.key] = cell || '';
+				});
+				return { number, texts };
+			});
+
+			return { questions, languages };
+		};
+
+		const loadCSV = (file) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const rows = parseCSV(reader.result);
+				const { questions, languages } = buildQuestionsFromRows(rows);
+				const leftLang = languages[0] || '';
+				const rightLang = languages[1] || languages[0] || '';
+				setState({ questions, leftLang, rightLang, currentIndex: 0 }, true);
+				populateLanguageSelectors(languages);
+			};
+			reader.readAsText(file);
+		};
+
+		const populateLanguageSelectors = (languages) => {
+			const left = el('leftLang');
+			const right = el('rightLang');
+			if (!left || !right) return;
+			left.innerHTML = '';
+			right.innerHTML = '';
+			languages.forEach(lang => {
+				const optionLeft = document.createElement('option');
+				optionLeft.value = lang;
+				optionLeft.textContent = lang;
+				const optionRight = optionLeft.cloneNode(true);
+				left.appendChild(optionLeft);
+				right.appendChild(optionRight);
+			});
+			left.value = state.leftLang;
+			right.value = state.rightLang;
+		};
+
+		const pushState = async () => {
+			if (!firestore || !roomDoc || isSyncing) return;
+			try {
+				await roomDoc.set({
+					state,
+					updatedAt: Date.now()
+				}, { merge: true });
+			} catch (err) {
+				updateSyncStatus('Sync failed');
+			}
+		};
+
+		const connectFirebase = async (config) => {
+			try {
+				if (!config || typeof config !== 'object') return;
+				const app = firebase.initializeApp(config, `quiz-${state.roomId}`);
+				firestore = firebase.firestore(app);
+				await firestore.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+				roomDoc = firestore.collection('rooms').doc(state.roomId);
+				unsubscribe = roomDoc.onSnapshot((doc) => {
+					const data = doc.data();
+					if (data && data.state) {
+						isSyncing = true;
+						Object.assign(state, data.state);
+						render();
+						isSyncing = false;
+					}
+					updateSyncStatus('Firebase connected');
+				});
+			} catch (err) {
+				updateSyncStatus('Firebase error');
+			}
+		};
+
+		const disconnectFirebase = () => {
+			if (unsubscribe) unsubscribe();
+			firestore = null;
+			roomDoc = null;
+			updateSyncStatus('Local only');
+		};
+
+		const bindJudgeControls = () => {
+			if (!el('openSetup')) return;
+
+			const goPrev = () => {
+				const prev = Math.max(state.currentIndex - 1, 0);
+				setState({ currentIndex: prev });
+			};
+			const goNext = () => {
+				const next = Math.min(state.currentIndex + 1, state.questions.length - 1);
+				setState({ currentIndex: next });
+			};
+
+			el('csvInput').addEventListener('change', (event) => {
+				const file = event.target.files[0];
+				if (file) loadCSV(file);
+			});
+
+			el('prevQuestion').addEventListener('click', goPrev);
+			el('nextQuestion').addEventListener('click', goNext);
+
+			el('leftLang').addEventListener('change', (event) => {
+				setState({ leftLang: event.target.value });
+			});
+			el('rightLang').addEventListener('change', (event) => {
+				setState({ rightLang: event.target.value });
+			});
+
+			const findQuestionIndex = (value) => {
+				const needle = String(value || '').trim().toLowerCase().replace(/^q/, '');
+				if (!needle) return null;
+				let index = state.questions.findIndex((q, i) => {
+					const qNum = String(q.number || i + 1).toLowerCase();
+					return qNum.startsWith(needle);
+				});
+				if (index === -1) {
+					const numeric = parseInt(needle, 10);
+					if (!isNaN(numeric)) {
+						index = Math.min(Math.max(numeric - 1, 0), state.questions.length - 1);
+					}
+				}
+				return index >= 0 ? index : null;
+			};
+
+			el('questionInput').addEventListener('input', (event) => {
+				const index = findQuestionIndex(event.target.value);
+				if (index !== null) setState({ currentIndex: index });
+			});
+
+			el('questionInput').addEventListener('keydown', (event) => {
+				if (event.key === 'Enter') {
+					const index = findQuestionIndex(event.target.value);
+					if (index !== null) setState({ currentIndex: index });
+				}
+			});
+
+			document.addEventListener('keydown', (event) => {
+				if (view !== 'judge') return;
+				const tag = document.activeElement && document.activeElement.tagName;
+				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+				if (event.key === 'ArrowRight') {
+					goNext();
+				}
+				if (event.key === 'ArrowLeft') {
+					goPrev();
+				}
+			});
+
+			el('toggleAnswers').addEventListener('click', () => {
+				setState({ showAnswersJudge: !state.showAnswersJudge });
+			});
+
+			el('toggleBlank').addEventListener('click', () => {
+				setState({ blankQuestions: !state.blankQuestions });
+			});
+
+			el('toggleScores').addEventListener('click', () => {
+				setState({ showScores: !state.showScores });
+			});
+
+			el('team1Name').addEventListener('input', (event) => {
+				state.teams[0].name = event.target.value;
+				setState({ teams: state.teams });
+			});
+			el('team2Name').addEventListener('input', (event) => {
+				state.teams[1].name = event.target.value;
+				setState({ teams: state.teams });
+			});
+
+			el('eventTitleInput').addEventListener('input', (event) => {
+				setState({ eventTitle: event.target.value.trim() });
+			});
+
+			document.querySelectorAll('[data-score]').forEach(button => {
+				button.addEventListener('click', () => {
+					const teamIndex = Number(button.getAttribute('data-team'));
+					const delta = Number(button.getAttribute('data-score'));
+					state.teams[teamIndex].score += delta;
+					setState({ teams: state.teams });
+				});
+			});
+
+			el('roomIdInput').addEventListener('input', (event) => {
+				setState({ roomId: event.target.value.trim() }, false);
+			});
+
+			el('openSetup').addEventListener('click', () => {
+				el('setupModal').classList.remove('hidden');
+			});
+
+			el('saveSetup').addEventListener('click', () => {
+				el('setupModal').classList.add('hidden');
+				setState({}, true);
+			});
+
+			el('cancelSetup').addEventListener('click', () => {
+				el('setupModal').classList.add('hidden');
+				render();
+			});
+
+			el('setupModal').addEventListener('click', (event) => {
+				if (event.target === el('setupModal')) {
+					el('setupModal').classList.add('hidden');
+					render();
+				}
+			});
+
+			el('swapScoreboard').addEventListener('click', () => {
+				setState({ scoreboardSwap: !state.scoreboardSwap });
+			});
+		};
+
+		const tryFullscreen = () => {
+			if (document.fullscreenElement) return;
+			if (document.documentElement.requestFullscreen) {
+				document.documentElement.requestFullscreen().catch(() => {});
+			}
+		};
+
+		const moveToSecondary = () => {
+			if (window.screen && window.screen.availWidth && window.screen.availHeight) {
+				try {
+					window.moveTo(window.screen.availWidth, 0);
+				} catch (err) {}
+			}
+		};
+
+		const init = () => {
+			if (view !== 'judge') {
+				document.body.classList.add('no-header');
+			}
+			if (view === 'overlay') {
+				document.body.classList.add('obs-overlay');
+			}
+			if (view === 'projector') {
+				document.body.classList.add('projector-screen');
+			}
+			if (view === 'scoreboard') {
+				document.getElementById('scoreboardView').classList.add('fullscreen');
+			}
+			if (view === 'projector') {
+				moveToSecondary();
+				tryFullscreen();
+			}
+			if (view === 'judge') bindJudgeControls();
+			if (FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
+				connectFirebase(FIREBASE_CONFIG);
+			} else {
+				updateSyncStatus('Add Firebase config');
+			}
+			render();
+			window.addEventListener('resize', () => {
+				applyFitText();
+			});
+		};
+
+		init();
+	</script>
+</body>
+</html>
