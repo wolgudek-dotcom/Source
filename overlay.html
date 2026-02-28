@@ -650,12 +650,31 @@
 					<div class="stack">
 						<label>
 							Room ID
-							<input id="roomIdInput" placeholder="room-1" />
+							<input id="roomIdInput" placeholder="1" />
 						</label>
+
+						<label>
+							Judge Password
+							<input id="judgePasswordInput" type="password" placeholder="Set or enter password" autocomplete="off" />
+						</label>
+						<div class="row wrap">
+							<button class="outline" id="setJudgePassword">Set/Update Judge Password</button>
+							<button class="outline" id="recoverOwnerControl">Recover Owner Control</button>
+						</div>
+						<div class="status" id="judgeAccessStatus">Judge role: Viewer</div>
 
 						<label>
 							Event Title (Projector)
 							<input id="eventTitleInput" placeholder="International Quiz 2026" />
+						</label>
+
+						<label>
+							Projector Text Size
+							<div class="row wrap">
+								<button class="outline" id="projectorTextMinus">Text -</button>
+								<div class="status" id="projectorTextValue">100%</div>
+								<button class="outline" id="projectorTextPlus">Text +</button>
+							</div>
 						</label>
 
 						<label>
@@ -701,7 +720,18 @@
 			</div>
 
 			<section id="judgeView" class="judge-layout hidden">
-				<div class="panel judge-controls">
+				<div class="panel hidden" id="judgeLockedPanel">
+					<div class="stack">
+						<div class="status" id="judgeLockedStatus">Enter judge password to view this room.</div>
+						<input id="judgeViewPasswordInput" type="password" placeholder="Judge password" autocomplete="off" />
+						<div class="row wrap">
+							<button class="primary" id="unlockJudgeView">Unlock Judge View</button>
+							<button class="outline" id="reclaimOwnerFromLock">Recover Owner Control</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="panel judge-controls" id="judgeControlsPanel">
 					<div class="controls-row">
 						<div class="controls-left"></div>
 						<div class="controls-center"></div>
@@ -713,7 +743,7 @@
 							<button class="outline" id="prevQuestion">Previous</button>
 							<button class="primary" id="nextQuestion">Next</button>
 							<span class="controls-label">Select</span>
-							<input id="questionInput" class="question-input" list="questionList" inputmode="numeric" placeholder="Type or choose" />
+							<input id="questionInput" class="question-input" list="questionList" inputmode="text" placeholder="Type or choose" />
 							<datalist id="questionList"></datalist>
 							<span class="status" id="questionIndex">0 / 0</span>
 						</div>
@@ -735,13 +765,14 @@
 							<div style="display: flex; align-items: center; gap: 8px;">
 								<span class="controls-label">Answers Visibility:</span>
 								<button class="outline toggle-indicator filled" id="toggleAnswers">On</button>
+								<span class="status" id="judgeReadOnlyHint"></span>
 								<button class="outline" id="openSetup">Setup</button>
 							</div>
 						</div>
 					</div>
 				</div>
 
-				<div class="panel stack">
+				<div class="panel stack" id="judgeContentPanel">
 					<div class="questions-display">
 						<div class="block">
 							<div class="q-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -835,7 +866,16 @@
   };
 
 
-		const view = new URLSearchParams(window.location.search).get('view') || 'judge';
+		const queryParams = new URLSearchParams(window.location.search);
+		const view = queryParams.get('view') || 'projector';
+		const normalizeRoomId = (value) => {
+			const raw = String(value || '').trim();
+			if (!raw) return '';
+			const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
+			if (key === '1' || key === 'room1') return '1';
+			return raw.toLowerCase();
+		};
+		const roomFromUrl = normalizeRoomId(queryParams.get('room') || queryParams.get('roomId') || '');
 		const headerView = document.getElementById('headerView');
 		if (headerView) {
 			headerView.textContent = `View: ${view.charAt(0).toUpperCase()}${view.slice(1)}`;
@@ -851,10 +891,11 @@
 		if (views[view]) views[view].classList.remove('hidden');
 
 		const state = {
-			roomId: 'room-1',
+			roomId: roomFromUrl || '1',
 			eventTitle: 'International Quiz 2026',
 			questions: [],
 			currentIndex: 0,
+			projectorTextScale: 1,
 			leftLang: '',
 			rightLang: '',
 			teams: [
@@ -871,12 +912,141 @@
 		let roomDoc = null;
 		let unsubscribe = null;
 		let isSyncing = false;
+		let connectedRoomId = '';
+		let hasHydratedStateFromRoom = false;
+		let lastStateUpdatedAt = 0;
+		const CLIENT_ID_STORAGE_KEY = 'quizClientId';
+		const getOrCreateClientId = () => {
+			try {
+				const existing = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+				if (existing) return existing;
+				const generated = `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+				localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+				return generated;
+			} catch (err) {
+				return `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+			}
+		};
+		const clientId = getOrCreateClientId();
+		let ownerClientId = '';
+		const access = {
+			lockEnabled: false,
+			judgePasswordHash: ''
+		};
+		let judgeViewUnlocked = false;
+		let unlockedViewHash = '';
 
 		const el = (id) => document.getElementById(id);
 		const syncStatus = el('syncStatus');
+		const getRoomLabel = () => normalizeRoomId(state.roomId) || '1';
+		const isOpenLobbyRoom = () => {
+			return normalizeRoomId(state.roomId) === '1';
+		};
 
 		const updateSyncStatus = (text) => {
-			if (syncStatus) syncStatus.textContent = text;
+			if (syncStatus) {
+				const roomLabel = connectedRoomId || getRoomLabel();
+				syncStatus.textContent = `${text} • Room: ${roomLabel}`;
+			}
+		};
+
+		const hashPassword = (value) => {
+			const text = String(value || '');
+			let hash = 2166136261;
+			for (let i = 0; i < text.length; i++) {
+				hash ^= text.charCodeAt(i);
+				hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+			}
+			return (`00000000${(hash >>> 0).toString(16)}`).slice(-8);
+		};
+
+		const isOwnerClient = () => {
+			return Boolean(ownerClientId) && ownerClientId === clientId;
+		};
+
+		const canViewJudge = () => {
+			if (view !== 'judge') return true;
+			if (isOpenLobbyRoom()) return true;
+			if (isOwnerClient()) return true;
+			if (!access.lockEnabled || !access.judgePasswordHash) return false;
+			return judgeViewUnlocked && unlockedViewHash === access.judgePasswordHash;
+		};
+
+		const canControlJudge = () => {
+			if (view !== 'judge') return false;
+			if (isOpenLobbyRoom()) return true;
+			return isOwnerClient();
+		};
+
+		const isJudgeReadOnly = () => {
+			if (view !== 'judge') return false;
+			return !canControlJudge();
+		};
+
+		const setJudgeVisibility = (visible) => {
+			if (view !== 'judge') return;
+			if (el('judgeControlsPanel')) el('judgeControlsPanel').classList.toggle('hidden', !visible);
+			if (el('judgeContentPanel')) el('judgeContentPanel').classList.toggle('hidden', !visible);
+			if (el('judgeLockedPanel')) el('judgeLockedPanel').classList.toggle('hidden', visible);
+			if (el('judgeLockedStatus') && !visible) {
+				if (!access.lockEnabled || !access.judgePasswordHash) {
+					el('judgeLockedStatus').textContent = 'Judge view is locked. Room owner must set a judge password first.';
+				} else {
+					el('judgeLockedStatus').textContent = 'Enter judge password to view this room.';
+				}
+			}
+		};
+
+		const setJudgeControlsEnabled = (enabled) => {
+			if (view !== 'judge') return;
+			const guardedIds = [
+				'prevQuestion',
+				'nextQuestion',
+				'questionInput',
+				'leftLang',
+				'rightLang',
+				'toggleAnswers',
+				'toggleBlank',
+				'toggleScores',
+				'csvInput',
+				'eventTitleInput',
+				'projectorTextMinus',
+				'projectorTextPlus',
+				'team1Name',
+				'team2Name',
+				'swapScoreboard'
+			];
+			guardedIds.forEach((id) => {
+				const node = el(id);
+				if (node) node.disabled = !enabled;
+			});
+			document.querySelectorAll('[data-score]').forEach((button) => {
+				button.disabled = !enabled;
+			});
+			if (el('judgeReadOnlyHint')) {
+				el('judgeReadOnlyHint').textContent = enabled ? 'Owner controls' : 'View-only';
+			}
+			if (el('judgeAccessStatus')) {
+				if (enabled) {
+					if (isOpenLobbyRoom()) {
+						el('judgeAccessStatus').textContent = 'Judge role: Open room (room 1, no password)';
+					} else {
+						el('judgeAccessStatus').textContent = 'Judge role: Owner (can control)';
+					}
+				} else if (!access.lockEnabled || !access.judgePasswordHash) {
+					el('judgeAccessStatus').textContent = 'Judge role: Viewer (locked - waiting for password setup)';
+				} else if (canViewJudge()) {
+					el('judgeAccessStatus').textContent = 'Judge role: Viewer (unlocked, read-only)';
+				} else {
+					el('judgeAccessStatus').textContent = 'Judge role: Viewer (locked)';
+				}
+			}
+			if (el('setJudgePassword')) {
+				el('setJudgePassword').disabled = !enabled || isOpenLobbyRoom();
+			}
+			if (el('recoverOwnerControl')) {
+				el('recoverOwnerControl').disabled = isOpenLobbyRoom();
+			}
 		};
 
 		const setState = (partial, publish = true) => {
@@ -895,6 +1065,21 @@
 		const normalizeText = (value) => {
 			if (!value) return '';
 			return value.replace(/<br\s*\/?\s*>/gi, '\n').trim();
+		};
+
+		const normalizeQuestionNumber = (value) => {
+			const raw = String(value || '').trim();
+			if (!raw) return '';
+			return raw.replace(/^questions?\s*#?\s*/i, '').trim();
+		};
+
+		const getQuestionNumberKey = (value) => {
+			return normalizeQuestionNumber(value).toLowerCase().replace(/\s+/g, '');
+		};
+
+		const formatQuestionNumberLabel = (value) => {
+			const normalized = normalizeQuestionNumber(value);
+			return normalized ? `Question #${normalized}` : '';
 		};
 
 		const setTextIfChanged = (element, text) => {
@@ -1023,13 +1208,15 @@
 
 		const render = () => {
 			const question = getCurrentQuestion();
-			const questionNumber = question ? question.number : '';
+			const questionNumber = question ? normalizeQuestionNumber(question.number) : '';
 			const blankAudience = shouldBlankQuestions(question);
 			const blankJudge = !question;
+			const canSeeJudge = canViewJudge();
+			const canEditJudge = canControlJudge();
 
 			if (el('headerView')) {
 				const label = view.charAt(0).toUpperCase() + view.slice(1);
-				el('headerView').textContent = `View: ${label}`;
+				el('headerView').textContent = `View: ${label} • Room: ${getRoomLabel()}`;
 			}
 
 			if (el('questionIndex')) {
@@ -1052,7 +1239,7 @@
 				}
 			}
 		if (el('currentQuestionNumber')) {
-			setTextIfChanged(el('currentQuestionNumber'), questionNumber ? `Question #${questionNumber}` : '');
+			setTextIfChanged(el('currentQuestionNumber'), formatQuestionNumberLabel(questionNumber));
 		}
 
 		setTextIfChanged(el('leftLangLabel'), state.leftLang || 'Left');
@@ -1100,7 +1287,7 @@
 				setOverlayQuestionText(el('overlayCenterText'), blankAudience ? '' : leftQ, blankAudience ? '' : rightQ);
 			}
 			if (el('overlayQuestionNumber')) {
-				setTextIfChanged(el('overlayQuestionNumber'), questionNumber ? `Question #${questionNumber}` : '');
+				setTextIfChanged(el('overlayQuestionNumber'), formatQuestionNumberLabel(questionNumber));
 			}
 			if (el('overlayCenterLabel')) {
 				setTextIfChanged(el('overlayCenterLabel'), questionNumber ? 'Question' : 'Question');
@@ -1119,7 +1306,7 @@
 				el('scoreboardTeam2Score').classList.toggle('hidden-score', !state.showScores);
 			}
 			if (el('scoreboardQuestion')) {
-				el('scoreboardQuestion').textContent = questionNumber ? `Question #${questionNumber}` : '';
+				el('scoreboardQuestion').textContent = formatQuestionNumberLabel(questionNumber);
 			}
 
 			if (el('toggleAnswers')) {
@@ -1138,8 +1325,14 @@
 			if (el('team1Name')) el('team1Name').value = state.teams[0].name;
 			if (el('team2Name')) el('team2Name').value = state.teams[1].name;
 			if (el('eventTitleInput')) el('eventTitleInput').value = state.eventTitle;
+			if (el('projectorTextValue')) {
+				const pct = Math.round((state.projectorTextScale || 1) * 100);
+				setTextIfChanged(el('projectorTextValue'), `${pct}%`);
+			}
 
 			if (el('roomIdInput')) el('roomIdInput').value = state.roomId;
+			setJudgeVisibility(canSeeJudge);
+			setJudgeControlsEnabled(canEditJudge);
 
 			applyFitText();
 		};
@@ -1157,8 +1350,12 @@
 				el.style.opacity = '0';
 				el.style.pointerEvents = 'none';
 			});
-			if (projectorLeft) fitTextToBox(projectorLeft, 18, 48);
-			if (projectorRight) fitTextToBox(projectorRight, 18, 48);
+			const baseScale = Math.max(window.innerWidth / 1920, window.innerHeight / 1080);
+			const userScale = Math.min(Math.max(state.projectorTextScale || 1, 0.7), 1.8);
+			const projectorMin = Math.round(20 * baseScale * userScale);
+			const projectorMax = Math.round(64 * baseScale * userScale);
+			if (projectorLeft) fitTextToBox(projectorLeft, projectorMin, projectorMax);
+			if (projectorRight) fitTextToBox(projectorRight, projectorMin, projectorMax);
 			if (overlayCenter) fitTextToBox(overlayCenter, 16, 28);
 			if (leftQuestion) fitTextToBox(leftQuestion, 14, 34);
 			if (rightQuestion) fitTextToBox(rightQuestion, 14, 34);
@@ -1238,7 +1435,7 @@
 
 			const dataRows = hasHeader ? rows.slice(1) : rows;
 			const questions = dataRows.map(row => {
-				const number = row[0] || '';
+				const number = normalizeQuestionNumber(row[0] || '');
 				const texts = {};
 				languages.forEach(lang => (texts[lang] = { q: '', a: '' }));
 				row.forEach((cell, idx) => {
@@ -1284,11 +1481,33 @@
 			right.value = state.rightLang;
 		};
 
+		const getSyncedState = () => {
+			const next = { ...state };
+			delete next.roomId;
+			return next;
+		};
+
 		const pushState = async () => {
 			if (!firestore || !roomDoc || isSyncing) return;
+			if (view === 'judge' && !canControlJudge()) return;
+			try {
+				const now = Date.now();
+				await roomDoc.set({
+					state: getSyncedState(),
+					updatedAt: now,
+					stateUpdatedBy: clientId
+				}, { merge: true });
+			} catch (err) {
+				updateSyncStatus('Sync failed');
+			}
+		};
+
+		const pushAccessState = async () => {
+			if (!firestore || !roomDoc || isSyncing) return;
+			if (view === 'judge' && !canControlJudge()) return;
 			try {
 				await roomDoc.set({
-					state,
+					access,
 					updatedAt: Date.now()
 				}, { merge: true });
 			} catch (err) {
@@ -1296,20 +1515,74 @@
 			}
 		};
 
+		const claimOwnerControl = async (password) => {
+			if (!firestore || !roomDoc) return false;
+			if (!access.lockEnabled || !access.judgePasswordHash) return false;
+			if (hashPassword(password) !== access.judgePasswordHash) return false;
+			try {
+				await roomDoc.set({ ownerClientId: clientId, updatedAt: Date.now() }, { merge: true });
+				ownerClientId = clientId;
+				judgeViewUnlocked = true;
+				unlockedViewHash = access.judgePasswordHash;
+				render();
+				return true;
+			} catch (err) {
+				return false;
+			}
+		};
+
 		const connectFirebase = async (config) => {
 			try {
 				if (!config || typeof config !== 'object') return;
+				hasHydratedStateFromRoom = false;
 				const app = firebase.initializeApp(config, `quiz-${state.roomId}`);
 				firestore = firebase.firestore(app);
 				await firestore.enablePersistence({ synchronizeTabs: true }).catch(() => {});
 				roomDoc = firestore.collection('rooms').doc(state.roomId);
+				connectedRoomId = state.roomId;
+				await firestore.runTransaction(async (transaction) => {
+					const snapshot = await transaction.get(roomDoc);
+					const data = snapshot.data() || {};
+					if (!data.ownerClientId) {
+						transaction.set(roomDoc, {
+							ownerClientId: clientId,
+							state: getSyncedState(),
+							access,
+							updatedAt: Date.now()
+						}, { merge: true });
+					}
+				});
 				unsubscribe = roomDoc.onSnapshot((doc) => {
 					const data = doc.data();
+					ownerClientId = (data && data.ownerClientId) ? data.ownerClientId : '';
+					if (data && data.access) {
+						Object.assign(access, data.access);
+						if (access.lockEnabled && access.judgePasswordHash) {
+							if (unlockedViewHash !== access.judgePasswordHash) judgeViewUnlocked = false;
+						} else {
+							judgeViewUnlocked = true;
+							unlockedViewHash = '';
+						}
+					}
 					if (data && data.state) {
-						isSyncing = true;
-						Object.assign(state, data.state);
+						const incomingUpdatedAt = Number(data.updatedAt || 0);
+						const isFirstHydration = !hasHydratedStateFromRoom;
+						const isOwnerJudgeSession = view === 'judge' && canControlJudge() && ownerClientId === clientId;
+						const shouldApplyRemoteState = isFirstHydration || !isOwnerJudgeSession;
+						if (shouldApplyRemoteState) {
+							isSyncing = true;
+							const incomingState = { ...(data.state || {}) };
+							delete incomingState.roomId;
+							Object.assign(state, incomingState);
+							if (incomingUpdatedAt > 0) {
+								lastStateUpdatedAt = incomingUpdatedAt;
+							}
+							render();
+							isSyncing = false;
+						}
+						hasHydratedStateFromRoom = true;
+					} else {
 						render();
-						isSyncing = false;
 					}
 					updateSyncStatus('Firebase connected');
 				});
@@ -1320,24 +1593,41 @@
 
 		const disconnectFirebase = () => {
 			if (unsubscribe) unsubscribe();
+			unsubscribe = null;
 			firestore = null;
 			roomDoc = null;
+			connectedRoomId = '';
+			hasHydratedStateFromRoom = false;
+			lastStateUpdatedAt = 0;
 			updateSyncStatus('Local only');
+		};
+
+		const connectToCurrentRoom = async () => {
+			if (FIREBASE_CONFIG.apiKey === "YOUR_API_KEY") {
+				updateSyncStatus('Add Firebase config');
+				return;
+			}
+			state.roomId = normalizeRoomId(state.roomId) || '1';
+			disconnectFirebase();
+			await connectFirebase(FIREBASE_CONFIG);
 		};
 
 		const bindJudgeControls = () => {
 			if (!el('openSetup')) return;
 
 			const goPrev = () => {
+				if (isJudgeReadOnly()) return;
 				const prev = Math.max(state.currentIndex - 1, 0);
 				setState({ currentIndex: prev });
 			};
 			const goNext = () => {
+				if (isJudgeReadOnly()) return;
 				const next = Math.min(state.currentIndex + 1, state.questions.length - 1);
 				setState({ currentIndex: next });
 			};
 
 			el('csvInput').addEventListener('change', (event) => {
+				if (isJudgeReadOnly()) return;
 				const file = event.target.files[0];
 				if (file) loadCSV(file);
 			});
@@ -1346,42 +1636,53 @@
 			el('nextQuestion').addEventListener('click', goNext);
 
 			el('leftLang').addEventListener('change', (event) => {
+				if (isJudgeReadOnly()) return;
 				setState({ leftLang: event.target.value });
 			});
 			el('rightLang').addEventListener('change', (event) => {
+				if (isJudgeReadOnly()) return;
 				setState({ rightLang: event.target.value });
 			});
 
 			const findQuestionIndex = (value) => {
-				const needle = String(value || '').trim().toLowerCase().replace(/^q/, '');
+				const needle = getQuestionNumberKey(value);
 				if (!needle) return null;
 				let index = state.questions.findIndex((q, i) => {
-					const qNum = String(q.number || i + 1).toLowerCase();
-					return qNum.startsWith(needle);
+					const qNum = getQuestionNumberKey(q.number || i + 1);
+					return qNum === needle;
 				});
 				if (index === -1) {
+					index = state.questions.findIndex((q, i) => {
+						const qNum = getQuestionNumberKey(q.number || i + 1);
+						return qNum.startsWith(needle);
+					});
+				}
+				if (index === -1 && /^\d+$/.test(needle)) {
 					const numeric = parseInt(needle, 10);
-					if (!isNaN(numeric)) {
-						index = Math.min(Math.max(numeric - 1, 0), state.questions.length - 1);
-					}
+					index = Math.min(Math.max(numeric - 1, 0), state.questions.length - 1);
 				}
 				return index >= 0 ? index : null;
 			};
 
-			el('questionInput').addEventListener('input', (event) => {
-				const index = findQuestionIndex(event.target.value);
+			const applyQuestionInput = (rawValue) => {
+				if (isJudgeReadOnly()) return;
+				const index = findQuestionIndex(rawValue);
 				if (index !== null) setState({ currentIndex: index });
-			});
+			};
 
 			el('questionInput').addEventListener('keydown', (event) => {
 				if (event.key === 'Enter') {
-					const index = findQuestionIndex(event.target.value);
-					if (index !== null) setState({ currentIndex: index });
+					applyQuestionInput(event.target.value);
 				}
+			});
+
+			el('questionInput').addEventListener('blur', (event) => {
+				applyQuestionInput(event.target.value);
 			});
 
 			document.addEventListener('keydown', (event) => {
 				if (view !== 'judge') return;
+				if (isJudgeReadOnly()) return;
 				const tag = document.activeElement && document.activeElement.tagName;
 				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 				if (event.key === 'ArrowRight') {
@@ -1393,32 +1694,51 @@
 			});
 
 			el('toggleAnswers').addEventListener('click', () => {
+				if (isJudgeReadOnly()) return;
 				setState({ showAnswersJudge: !state.showAnswersJudge });
 			});
 
 			el('toggleBlank').addEventListener('click', () => {
+				if (isJudgeReadOnly()) return;
 				setState({ blankQuestions: !state.blankQuestions });
 			});
 
 			el('toggleScores').addEventListener('click', () => {
+				if (isJudgeReadOnly()) return;
 				setState({ showScores: !state.showScores });
 			});
 
 			el('team1Name').addEventListener('input', (event) => {
+				if (isJudgeReadOnly()) return;
 				state.teams[0].name = event.target.value;
 				setState({ teams: state.teams });
 			});
 			el('team2Name').addEventListener('input', (event) => {
+				if (isJudgeReadOnly()) return;
 				state.teams[1].name = event.target.value;
 				setState({ teams: state.teams });
 			});
 
 			el('eventTitleInput').addEventListener('input', (event) => {
+				if (isJudgeReadOnly()) return;
 				setState({ eventTitle: event.target.value.trim() });
+			});
+
+			el('projectorTextMinus').addEventListener('click', () => {
+				if (isJudgeReadOnly()) return;
+				const next = Math.max(0.7, (state.projectorTextScale || 1) - 0.1);
+				setState({ projectorTextScale: Number(next.toFixed(2)) });
+			});
+
+			el('projectorTextPlus').addEventListener('click', () => {
+				if (isJudgeReadOnly()) return;
+				const next = Math.min(1.8, (state.projectorTextScale || 1) + 0.1);
+				setState({ projectorTextScale: Number(next.toFixed(2)) });
 			});
 
 			document.querySelectorAll('[data-score]').forEach(button => {
 				button.addEventListener('click', () => {
+					if (isJudgeReadOnly()) return;
 					const teamIndex = Number(button.getAttribute('data-team'));
 					const delta = Number(button.getAttribute('data-score'));
 					state.teams[teamIndex].score += delta;
@@ -1427,16 +1747,17 @@
 			});
 
 			el('roomIdInput').addEventListener('input', (event) => {
-				setState({ roomId: event.target.value.trim() }, false);
+				setState({ roomId: normalizeRoomId(event.target.value) }, false);
 			});
 
 			el('openSetup').addEventListener('click', () => {
 				el('setupModal').classList.remove('hidden');
 			});
 
-			el('saveSetup').addEventListener('click', () => {
+			el('saveSetup').addEventListener('click', async () => {
 				el('setupModal').classList.add('hidden');
-				setState({}, true);
+				await connectToCurrentRoom();
+				if (!isJudgeReadOnly()) setState({}, true);
 			});
 
 			el('cancelSetup').addEventListener('click', () => {
@@ -1452,7 +1773,110 @@
 			});
 
 			el('swapScoreboard').addEventListener('click', () => {
+				if (isJudgeReadOnly()) return;
 				setState({ scoreboardSwap: !state.scoreboardSwap });
+			});
+
+			el('setJudgePassword').addEventListener('click', async () => {
+				if (isOpenLobbyRoom()) {
+					if (el('judgeAccessStatus')) {
+						el('judgeAccessStatus').textContent = 'Room 1 is always open and cannot be password protected';
+					}
+					return;
+				}
+				if (!canControlJudge()) {
+					if (el('judgeAccessStatus')) {
+						el('judgeAccessStatus').textContent = 'Judge role: Viewer (only owner can change password)';
+					}
+					return;
+				}
+				const password = String(el('judgePasswordInput').value || '').trim();
+				if (!password) {
+					if (el('judgeAccessStatus')) {
+						el('judgeAccessStatus').textContent = 'Judge role: Owner (enter password first)';
+					}
+					return;
+				}
+				access.lockEnabled = true;
+				access.judgePasswordHash = hashPassword(password);
+				judgeViewUnlocked = true;
+				unlockedViewHash = access.judgePasswordHash;
+				await pushAccessState();
+				render();
+			});
+
+			el('recoverOwnerControl').addEventListener('click', async () => {
+				if (isOpenLobbyRoom()) {
+					if (el('judgeAccessStatus')) {
+						el('judgeAccessStatus').textContent = 'Room 1 is open; recovery is only for protected rooms';
+					}
+					return;
+				}
+				if (canControlJudge()) {
+					if (el('judgeAccessStatus')) {
+						el('judgeAccessStatus').textContent = 'Judge role: Owner (already in control)';
+					}
+					return;
+				}
+				const password = String(el('judgePasswordInput').value || '').trim();
+				if (!password) {
+					if (el('judgeAccessStatus')) {
+						el('judgeAccessStatus').textContent = 'Judge role: Viewer (enter room password to recover control)';
+					}
+					return;
+				}
+				const ok = await claimOwnerControl(password);
+				if (!ok && el('judgeAccessStatus')) {
+					el('judgeAccessStatus').textContent = 'Judge role: Viewer (recovery failed - check password)';
+				}
+			});
+
+			el('unlockJudgeView').addEventListener('click', () => {
+				if (canViewJudge()) {
+					setJudgeVisibility(true);
+					render();
+					return;
+				}
+				if (!access.lockEnabled || !access.judgePasswordHash) {
+					if (el('judgeLockedStatus')) {
+						el('judgeLockedStatus').textContent = 'Owner must set a judge password before recovery is possible.';
+					}
+					return;
+				}
+				const password = String(el('judgeViewPasswordInput').value || '').trim();
+				if (!password) {
+					if (el('judgeLockedStatus')) {
+						el('judgeLockedStatus').textContent = 'Enter password to unlock judge view.';
+					}
+					return;
+				}
+				if (hashPassword(password) === access.judgePasswordHash) {
+					judgeViewUnlocked = true;
+					unlockedViewHash = access.judgePasswordHash;
+					render();
+				} else if (el('judgeLockedStatus')) {
+					el('judgeLockedStatus').textContent = 'Wrong password. Try again.';
+				}
+			});
+
+			el('judgeViewPasswordInput').addEventListener('keydown', (event) => {
+				if (event.key === 'Enter') {
+					el('unlockJudgeView').click();
+				}
+			});
+
+			el('reclaimOwnerFromLock').addEventListener('click', async () => {
+				const password = String(el('judgeViewPasswordInput').value || '').trim();
+				if (!password) {
+					if (el('judgeLockedStatus')) {
+						el('judgeLockedStatus').textContent = 'Enter password to recover owner control.';
+					}
+					return;
+				}
+				const ok = await claimOwnerControl(password);
+				if (!ok && el('judgeLockedStatus')) {
+					el('judgeLockedStatus').textContent = 'Recovery failed. Check password and try again.';
+				}
 			});
 		};
 
@@ -1489,11 +1913,7 @@
 				tryFullscreen();
 			}
 			if (view === 'judge') bindJudgeControls();
-			if (FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
-				connectFirebase(FIREBASE_CONFIG);
-			} else {
-				updateSyncStatus('Add Firebase config');
-			}
+			connectToCurrentRoom();
 			render();
 			window.addEventListener('resize', () => {
 				applyFitText();

@@ -20,16 +20,30 @@ Update `FIREBASE_CONFIG` in `overlay.html` with your Firebase credentials.
 
 1. Open in browser: `file:///path/to/overlay.html`
 2. Select view with URL parameter:
-   - `?view=judge` - Judge control panel (default)
-   - `?view=projector` - Fullscreen projector display
+   - `?view=judge` - Judge control panel
+   - `?view=projector` - Fullscreen projector display (default if no `view` provided)
    - `?view=overlay` - OBS transparent overlay
    - `?view=scoreboard` - Scoreboard-only view
 
-3. Load CSV with format:
+3. Select room with URL parameter on any view:
+   - `?room=1` or `?roomId=1`
+   - Example projector URL: `overlay.html?view=projector&room=finals`
+   - Example overlay URL: `overlay.html?view=overlay&room=finals`
+   - If no room is provided, all views default to room `1`.
+   - Room `1` is always open (no judge password lock) so it can be used as a safe starting room.
+   - Room names are normalized to lowercase (`Practice` and `practice` connect to the same room).
+   - Sync happens only within the exact same room name (for example, `quiz` syncs only with `quiz`, not with `1`).
+
+4. Load CSV with format:
    - Columns: `[Question #, Language 1 Question, Language 1 Answer, Language 2 Question, Language 2 Answer, ...]`
    - OR with headers: `Language 1 Question`, `Language 1 Answer`, etc.
 
-4. Enter room ID to enable Firebase sync across machines
+5. Enter room ID in judge setup (or use URL room param) to choose which Firebase room to sync across machines.
+
+6. Projector text sizing:
+   - In Judge Setup, use `Text -` / `Text +` under `Projector Text Size`.
+   - This affects projector question text only.
+   - Projector text also scales up automatically on higher-resolution displays.
 
 ## CSV Format Example
 
