@@ -32,6 +32,32 @@
 			background: transparent;
 		}
 
+		body.obs-overlay .overlay-bar {
+			background: #000;
+			border: 1px solid #2c3a48;
+			box-shadow: none;
+		}
+
+		body.obs-overlay .overlay-center {
+			background: #000;
+			border: 1px solid #58e1ff;
+			box-shadow: none;
+		}
+
+		body.obs-overlay .overlay-team .name,
+		body.obs-overlay .overlay-team .score {
+			text-shadow: none;
+		}
+
+		body.obs-overlay .overlay-qnum,
+		body.obs-overlay .overlay-center .q-text .overlay-sub {
+			color: #c6d2e3;
+		}
+
+		body.obs-overlay .overlay-center .q-text .overlay-lang-divider {
+			background: #58e1ff;
+		}
+
 		.hidden { display: none !important; }
 
 		.app {
@@ -634,6 +660,28 @@
 			justify-content: flex-end;
 			margin-top: 20px;
 		}
+
+		#judgeView,
+		#projectorView,
+		#overlayView,
+		#scoreboardView {
+			position: relative;
+		}
+
+		.view-room-tag {
+			position: absolute;
+			top: 8px;
+			right: 10px;
+			font-size: 11px;
+			padding: 4px 8px;
+			border-radius: 999px;
+			border: 1px solid #2a3646;
+			background: rgba(12, 18, 26, 0.82);
+			color: #c6d2e3;
+			z-index: 5;
+			pointer-events: none;
+			letter-spacing: 0.2px;
+		}
 	</style>
 </head>
 <body>
@@ -720,6 +768,7 @@
 			</div>
 
 			<section id="judgeView" class="judge-layout hidden">
+				<div class="view-room-tag" id="judgeRoomTag"></div>
 				<div class="panel hidden" id="judgeLockedPanel">
 					<div class="stack">
 						<div class="status" id="judgeLockedStatus">Enter judge password to view this room.</div>
@@ -798,6 +847,7 @@
 			</section>
 
 			<section id="projectorView" class="overlay-view hidden">
+				<div class="view-room-tag" id="projectorRoomTag"></div>
 				<div class="projector-layout">
 					<div class="projector-header">
 						<div class="q-title left-label" id="projectorLeftLabel"></div>
@@ -816,6 +866,7 @@
 			</section>
 
 			<section id="overlayView" class="overlay-view hidden">
+				<div class="view-room-tag" id="overlayRoomTag"></div>
 				<div class="overlay-bar">
 					<div class="overlay-team">
 						<div class="name" id="overlayTeam1Name"></div>
@@ -834,6 +885,7 @@
 			</section>
 
 			<section id="scoreboardView" class="scoreboard-only hidden">
+				<div class="view-room-tag" id="scoreboardRoomTag"></div>
 				<div class="row space">
 					<div class="pill">Scoreboard</div>
 					<div class="status" id="scoreboardQuestion"></div>
@@ -1213,11 +1265,16 @@
 			const blankJudge = !question;
 			const canSeeJudge = canViewJudge();
 			const canEditJudge = canControlJudge();
+			const roomTagText = `Room: ${connectedRoomId || getRoomLabel()}`;
 
 			if (el('headerView')) {
 				const label = view.charAt(0).toUpperCase() + view.slice(1);
 				el('headerView').textContent = `View: ${label} • Room: ${getRoomLabel()}`;
 			}
+			setTextIfChanged(el('judgeRoomTag'), roomTagText);
+			setTextIfChanged(el('projectorRoomTag'), roomTagText);
+			setTextIfChanged(el('overlayRoomTag'), roomTagText);
+			setTextIfChanged(el('scoreboardRoomTag'), roomTagText);
 
 			if (el('questionIndex')) {
 				setTextIfChanged(el('questionIndex'), `${state.currentIndex + 1} / ${state.questions.length}`);
